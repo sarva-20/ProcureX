@@ -1,49 +1,31 @@
 import os
 from pathlib import Path
 from pypdf import PdfReader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_chroma import Chroma
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from dotenv import load_dotenv
 
 load_dotenv()
 
-CHROMA_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_db")
+# Simple in-memory store — no ChromaDB, no embeddings
+_pdf_store = {}
 
 
-def get_embeddings():
-    return GoogleGenerativeAIEmbeddings(
-        model="models/gemini-embedding-001",
-        google_api_key=os.getenv("GOOGLE_API_KEY")
-    )
-
-
-def ingest_pdf(pdf_path: str, collection_name: str = "tender_docs") -> Chroma:
+def ingest_pdf(pdf_path: str, collection_name: str = "tender_docs") -> dict:
+    """Extract text from PDF and store in memory."""
     reader = PdfReader(pdf_path)
     raw_text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
     if not raw_text.strip():
         raise ValueError(f"Could not extract text from PDF: {pdf_path}")
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=3000, chunk_overlap=200)
-    chunks = splitter.create_documents(
-        texts=[raw_text],
-        metadatas=[{"source": Path(pdf_path).name}]
-    )
-
-    vectorstore = Chroma.from_documents(
-        documents=chunks,
-        embedding=get_embeddings(),
-        collection_name=collection_name,
-        persist_directory=CHROMA_DIR
-    )
-    print(f"[Ingest] Stored {len(chunks)} chunks.")
-    return vectorstore
+    _pdf_store[collection_name] = raw_text
+    print(f"[Ingest] Stored {len(raw_text)} chars from '{Path(pdf_path).name}'")
+    return {"collection_name": collection_name, "text": raw_text}
 
 
-def load_vectorstore(collection_name: str = "tender_docs") -> Chroma:
-    return Chroma(
-        collection_name=collection_name,
-        embedding_function=get_embeddings(),
-        persist_directory=CHROMA_DIR
-    )
+def load_vectorstore(collection_name: str = "tender_docs"):
+    return _pdf_store.get(collection_name, "")
+
+
+def query_vectorstore(query: str, collection_name: str = "tender_docs", k: int = 5) -> str:
+    """Return full text — let Gemini handle the retrieval."""
+    return _pdf_store.get(collection_name, "")

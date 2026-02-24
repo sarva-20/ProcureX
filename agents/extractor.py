@@ -1,13 +1,15 @@
 """
 agents/extractor.py — Agent 1: Tender Requirements Extractor
-Uses RAG to pull structured requirements from the uploaded tender PDF.
+Passes full PDF text to Gemini for extraction.
 """
 
 import os
+import json
+import re
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
-from rag.retriever import query_vectorstore
+from rag.ingest import load_vectorstore
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,10 +17,10 @@ load_dotenv()
 EXTRACTION_PROMPT = PromptTemplate(
     input_variables=["context"],
     template="""
-You are a government tender analysis expert. Based on the following tender document excerpts, 
+You are a government tender analysis expert. Based on the following tender document, 
 extract ALL key requirements in a structured format.
 
-TENDER DOCUMENT EXCERPTS:
+TENDER DOCUMENT:
 {context}
 
 Extract and return a JSON object with these exact keys:
@@ -49,23 +51,14 @@ Return ONLY valid JSON, no extra text.
 
 
 def run_extractor(collection_name: str = "tender_docs") -> dict:
-    """
-    Agent 1: Extract structured requirements from ingested tender PDF.
-    """
-    # RAG: retrieve relevant chunks
-    queries = [
-        "eligibility criteria turnover experience qualifications",
-        "scope of work deliverables technical requirements",
-        "submission deadline evaluation criteria tender value",
-        "certifications financial bid technical bid"
-    ]
-    
-    context_parts = []
-    for q in queries:
-        chunk = query_vectorstore(q, collection_name=collection_name, k=3)
-        context_parts.append(chunk)
-    
-    combined_context = "\n\n===\n\n".join(context_parts)
+    """Agent 1: Extract structured requirements from tender text."""
+    context = load_vectorstore(collection_name)
+
+    if not context:
+        return {"error": "No tender text found"}
+
+    # Truncate to avoid token limits
+    context = context[:8000]
 
     llm = ChatGoogleGenerativeAI(
         model="gemini-2.5-flash",
@@ -74,12 +67,10 @@ def run_extractor(collection_name: str = "tender_docs") -> dict:
     )
 
     chain = LLMChain(llm=llm, prompt=EXTRACTION_PROMPT)
-    result = chain.run(context=combined_context)
+    result = chain.run(context=context)
 
-    # Parse JSON safely
-    import json, re
     json_match = re.search(r'\{.*\}', result, re.DOTALL)
     if json_match:
         return json.loads(json_match.group())
-    
+
     return {"raw_extraction": result, "error": "JSON parse failed"}

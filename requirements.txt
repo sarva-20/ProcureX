@@ -4,8 +4,6 @@ python-multipart==0.0.9
 langchain==0.2.6
 langchain-google-genai==1.0.6
 langchain-community==0.2.6
-langchain-chroma==0.1.2
-chromadb==0.5.3
 pypdf==4.2.0
 pydantic==2.7.4
 python-dotenv==1.0.1
