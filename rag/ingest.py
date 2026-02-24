@@ -3,7 +3,7 @@ from pathlib import Path
 from pypdf import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_community.embeddings import SentenceTransformerEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,7 +12,10 @@ CHROMA_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_db")
 
 
 def get_embeddings():
-    return SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+    return GoogleGenerativeAIEmbeddings(
+        model="models/gemini-embedding-001",
+        google_api_key=os.getenv("GOOGLE_API_KEY")
+    )
 
 
 def ingest_pdf(pdf_path: str, collection_name: str = "tender_docs") -> Chroma:
@@ -22,7 +25,7 @@ def ingest_pdf(pdf_path: str, collection_name: str = "tender_docs") -> Chroma:
     if not raw_text.strip():
         raise ValueError(f"Could not extract text from PDF: {pdf_path}")
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=3000, chunk_overlap=200)
     chunks = splitter.create_documents(
         texts=[raw_text],
         metadatas=[{"source": Path(pdf_path).name}]
