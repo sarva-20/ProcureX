@@ -3,7 +3,7 @@ from pathlib import Path
 from pypdf import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_community.embeddings import FakeEmbeddings
+from langchain_community.embeddings import SentenceTransformerEmbeddings
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,8 +12,7 @@ CHROMA_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_db")
 
 
 def get_embeddings():
-    # FakeEmbeddings for local testing — no API, no external model needed
-    return FakeEmbeddings(size=384)
+    return SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
 
 
 def ingest_pdf(pdf_path: str, collection_name: str = "tender_docs") -> Chroma:

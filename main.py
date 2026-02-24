@@ -26,6 +26,15 @@ app = FastAPI(
     description="Multi-agent AI system for analyzing government tenders using LangChain + Gemini",
     version="1.0.0"
 )
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 UPLOAD_DIR = Path("./uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
