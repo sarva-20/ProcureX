@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
@@ -26,7 +27,6 @@ app = FastAPI(
     description="Multi-agent AI system for analyzing government tenders using LangChain + Gemini",
     version="1.0.0"
 )
-from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,7 +39,6 @@ app.add_middleware(
 UPLOAD_DIR = Path("./uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# In-memory job store (use Redis in prod)
 jobs: dict = {}
 
 
@@ -70,7 +69,6 @@ def health():
 
 
 def run_pipeline(job_id: str, pdf_path: str, company_profile: dict):
-    """Background task — runs the 4-agent pipeline."""
     try:
         jobs[job_id]["status"] = "ingesting"
         collection_name = f"tender_{job_id}"
@@ -105,7 +103,6 @@ def run_pipeline(job_id: str, pdf_path: str, company_profile: dict):
         jobs[job_id]["status"] = "failed"
         jobs[job_id]["error"] = str(e)
     finally:
-        # Cleanup uploaded file
         try:
             os.remove(pdf_path)
         except Exception:
@@ -121,17 +118,12 @@ async def analyze_tender(
     years_in_operation: int = 8,
     msme_registered: bool = True
 ):
-    """
-    Upload a tender PDF and kick off the multi-agent analysis pipeline.
-    Returns a job_id to poll /status/{job_id}.
-    """
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
 
     job_id = str(uuid.uuid4())[:8]
     pdf_path = str(UPLOAD_DIR / f"{job_id}_{file.filename}")
 
-    # Save uploaded file
     with open(pdf_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
@@ -162,21 +154,16 @@ async def n8n_webhook(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
 ):
-    """
-    n8n webhook endpoint — same as /analyze with defaults.
-    n8n sends the PDF here via HTTP Request node.
-    """
     return await analyze_tender(background_tasks, file)
 
 
 @app.get("/status/{job_id}")
 def get_status(job_id: str):
-    """Poll job status and get results when complete."""
     if job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")
-    
+
     job = jobs[job_id]
-    
+
     if job["status"] == "complete":
         return JSONResponse(content=job["result"])
     elif job["status"] == "failed":
