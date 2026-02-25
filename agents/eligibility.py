@@ -1,91 +1,79 @@
 """
 agents/eligibility.py — Agent 2: Eligibility Checker
-Checks if a company profile meets the tender's eligibility criteria.
+Uses Strands Agent with Gemini.
 """
 
 import os
 import json
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
+import re
+from strands import Agent
+from strands.models.litellm import LiteLLMModel
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Default company profile — swap this out with a real one or pass dynamically
-DEFAULT_COMPANY_PROFILE = {
-    "name": "TechSolutions India Pvt Ltd",
-    "annual_turnover_cr": 15,
-    "years_in_operation": 8,
-    "certifications": ["ISO 9001:2015", "CMMI Level 3"],
-    "prior_govt_projects": 3,
-    "technical_team_size": 45,
-    "domain_expertise": ["software development", "AI/ML", "cloud infrastructure"],
-    "registered_as": "Pvt Ltd",
-    "msme_registered": True
-}
 
-ELIGIBILITY_PROMPT = PromptTemplate(
-    input_variables=["tender_requirements", "company_profile"],
-    template="""
-You are a government procurement compliance expert. Analyze whether the company meets the tender requirements.
+def get_model():
+    return LiteLLMModel(
+        model_id="gemini/gemini-2.5-flash",
+        params={
+            "api_key": os.getenv("GOOGLE_API_KEY"),
+            "temperature": 0.1,
+        }
+    )
+
+
+SYSTEM_PROMPT = """You are a procurement eligibility expert for Indian government tenders.
+Evaluate company eligibility against tender requirements precisely and objectively.
+Always respond with valid JSON only."""
+
+
+def run_eligibility_check(extracted_requirements: dict, company_profile: dict) -> dict:
+    """Agent 2: Check company eligibility against tender requirements."""
+
+    agent = Agent(
+        model=get_model(),
+        system_prompt=SYSTEM_PROMPT,
+    )
+
+    prompt = f"""Evaluate if this company is eligible for this tender.
 
 TENDER REQUIREMENTS:
-{tender_requirements}
+{json.dumps(extracted_requirements, indent=2)}
 
 COMPANY PROFILE:
-{company_profile}
+{json.dumps(company_profile, indent=2)}
 
-Perform a thorough eligibility check and return a JSON object:
+Return a JSON object:
 {{
   "overall_eligible": true/false,
   "eligibility_score": 0-100,
+  "recommendation": "PROCEED" or "DO NOT BID",
+  "reasoning": "Clear explanation",
   "criteria_analysis": [
     {{
-      "criterion": "...",
-      "required": "...",
-      "company_has": "...",
-      "meets_requirement": true/false,
-      "gap": "..." 
+      "criterion": "criterion name",
+      "required": "what is required",
+      "company_capability": "what company has",
+      "meets_requirement": true/false/null,
+      "gap": "gap description if any"
     }}
   ],
   "strengths": [],
   "disqualifiers": [],
-  "conditional_eligibility": [],
-  "recommendation": "PROCEED / PROCEED WITH CAUTION / DO NOT BID",
-  "reasoning": "..."
+  "conditions": []
 }}
 
-Return ONLY valid JSON.
-"""
-)
+Return ONLY valid JSON."""
 
+    result = agent(prompt)
+    response_text = str(result)
 
-def run_eligibility_check(
-    extracted_requirements: dict,
-    company_profile: dict = None
-) -> dict:
-    """
-    Agent 2: Check eligibility against extracted tender requirements.
-    """
-    if company_profile is None:
-        company_profile = DEFAULT_COMPANY_PROFILE
-
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
-        temperature=0.1
-    )
-
-    chain = LLMChain(llm=llm, prompt=ELIGIBILITY_PROMPT)
-    result = chain.run(
-        tender_requirements=json.dumps(extracted_requirements, indent=2),
-        company_profile=json.dumps(company_profile, indent=2)
-    )
-
-    import re
-    json_match = re.search(r'\{.*\}', result, re.DOTALL)
+    json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
     if json_match:
-        return json.loads(json_match.group())
+        try:
+            return json.loads(json_match.group())
+        except json.JSONDecodeError:
+            pass
 
-    return {"raw_result": result, "error": "JSON parse failed"}
+    return {"overall_eligible": False, "eligibility_score": 0, "recommendation": "DO NOT BID", "reasoning": response_text}

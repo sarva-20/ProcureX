@@ -1,29 +1,53 @@
 """
 agents/extractor.py — Agent 1: Tender Requirements Extractor
-Passes full PDF text to Gemini for extraction.
+Uses Strands Agent with Gemini for extraction.
 """
 
 import os
 import json
 import re
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
+from strands import Agent
+from strands.models.litellm import LiteLLMModel
 from rag.ingest import load_vectorstore
 from dotenv import load_dotenv
 
 load_dotenv()
 
-EXTRACTION_PROMPT = PromptTemplate(
-    input_variables=["context"],
-    template="""
-You are a government tender analysis expert. Based on the following tender document, 
-extract ALL key requirements in a structured format.
+
+def get_model():
+    return LiteLLMModel(
+        model_id="gemini/gemini-2.5-flash",
+        params={
+            "api_key": os.getenv("GOOGLE_API_KEY"),
+            "temperature": 0.1,
+        }
+    )
+
+
+SYSTEM_PROMPT = """You are a government tender analysis expert specializing in Indian procurement.
+Your job is to extract structured information from tender documents accurately.
+Always respond with valid JSON only, no markdown, no extra text."""
+
+
+def run_extractor(collection_name: str = "tender_docs") -> dict:
+    """Agent 1: Extract structured requirements from tender text."""
+    context = load_vectorstore(collection_name)
+    if not context:
+        return {"error": "No tender text found"}
+
+    context = context[:8000]
+
+    agent = Agent(
+        model=get_model(),
+        system_prompt=SYSTEM_PROMPT,
+    )
+
+    prompt = f"""Extract all key requirements from this tender document and return as JSON.
 
 TENDER DOCUMENT:
 {context}
 
-Extract and return a JSON object with these exact keys:
+Return a JSON object with these exact keys:
 {{
   "tender_title": "...",
   "issuing_authority": "...",
@@ -45,32 +69,16 @@ Extract and return a JSON object with these exact keys:
   "special_conditions": []
 }}
 
-Return ONLY valid JSON, no extra text.
-"""
-)
+Return ONLY valid JSON, no extra text."""
 
+    result = agent(prompt)
+    response_text = str(result)
 
-def run_extractor(collection_name: str = "tender_docs") -> dict:
-    """Agent 1: Extract structured requirements from tender text."""
-    context = load_vectorstore(collection_name)
-
-    if not context:
-        return {"error": "No tender text found"}
-
-    # Truncate to avoid token limits
-    context = context[:8000]
-
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
-        temperature=0.1
-    )
-
-    chain = LLMChain(llm=llm, prompt=EXTRACTION_PROMPT)
-    result = chain.run(context=context)
-
-    json_match = re.search(r'\{.*\}', result, re.DOTALL)
+    json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
     if json_match:
-        return json.loads(json_match.group())
+        try:
+            return json.loads(json_match.group())
+        except json.JSONDecodeError:
+            pass
 
-    return {"raw_extraction": result, "error": "JSON parse failed"}
+    return {"raw_extraction": response_text, "tender_title": "Extracted", "error": "JSON parse failed"}
