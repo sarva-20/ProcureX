@@ -7,7 +7,7 @@ import os
 import shutil
 import uuid
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -113,10 +113,15 @@ def run_pipeline(job_id: str, pdf_path: str, company_profile: dict):
 async def analyze_tender(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    company_name: str = "TechSolutions India Pvt Ltd",
-    annual_turnover_cr: float = 15,
-    years_in_operation: int = 8,
-    msme_registered: bool = True
+    company_name: str = Form("My Company"),
+    domain_expertise: str = Form("software development, AI/ML"),
+    annual_turnover_cr: float = Form(15),
+    years_in_operation: int = Form(8),
+    certifications: str = Form("ISO 9001:2015"),
+    prior_govt_projects: int = Form(2),
+    technical_team_size: int = Form(30),
+    registered_as: str = Form("Pvt Ltd"),
+    msme_registered: bool = Form(True)
 ):
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
@@ -131,11 +136,11 @@ async def analyze_tender(
         "name": company_name,
         "annual_turnover_cr": annual_turnover_cr,
         "years_in_operation": years_in_operation,
-        "certifications": ["ISO 9001:2015"],
-        "prior_govt_projects": 2,
-        "technical_team_size": 30,
-        "domain_expertise": ["software development", "AI/ML"],
-        "registered_as": "Pvt Ltd",
+        "certifications": [c.strip() for c in certifications.split(",")],
+        "prior_govt_projects": prior_govt_projects,
+        "technical_team_size": technical_team_size,
+        "domain_expertise": [d.strip() for d in domain_expertise.split(",")],
+        "registered_as": registered_as,
         "msme_registered": msme_registered
     }
 
@@ -147,7 +152,6 @@ async def analyze_tender(
         "message": "Analysis started. Poll /status/{job_id} for results.",
         "poll_url": f"/status/{job_id}"
     }
-
 
 @app.post("/webhook")
 async def n8n_webhook(

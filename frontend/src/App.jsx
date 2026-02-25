@@ -74,7 +74,43 @@ function Ring({ value, color, size = 64, stroke = 6 }) {
   );
 }
 
+function Input({ label, value, onChange, placeholder, type = "text", hint }) {
+  return (
+    <div style={{ marginBottom: "16px" }}>
+      <label style={{ fontSize: "12px", fontWeight: 600, color: "#555", display: "block", marginBottom: "6px" }}>{label}</label>
+      <input
+        type={type}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          width: "100%", padding: "10px 14px",
+          border: "1px solid #e0e0e8", borderRadius: "10px",
+          fontSize: "14px", color: "#111", background: "#fff",
+          outline: "none", fontFamily: "'Plus Jakarta Sans', sans-serif",
+          transition: "border-color 0.2s"
+        }}
+        onFocus={e => e.target.style.borderColor = "#6366f1"}
+        onBlur={e => e.target.style.borderColor = "#e0e0e8"}
+      />
+      {hint && <div style={{ fontSize: "11px", color: "#bbb", marginTop: "4px" }}>{hint}</div>}
+    </div>
+  );
+}
+
 export default function App() {
+  const [step, setStep] = useState("profile"); // profile | upload | processing | results
+  const [company, setCompany] = useState({
+    name: "",
+    domain_expertise: "",
+    annual_turnover_cr: "",
+    years_in_operation: "",
+    certifications: "",
+    prior_govt_projects: "",
+    technical_team_size: "",
+    registered_as: "Pvt Ltd",
+    msme_registered: true,
+  });
   const [file, setFile] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [stage, setStage] = useState(null);
@@ -95,32 +131,43 @@ export default function App() {
       const res = await fetch(`${API_URL}/status/${id}`);
       const data = await res.json();
       if (data.bid_strategy) {
-        clearInterval(pollRef.current); setStage("complete"); setResult(data);
+        clearInterval(pollRef.current); setStage("complete"); setResult(data); setStep("results");
       } else if (data.status === "failed") {
-        clearInterval(pollRef.current); setError(data.error); setStage(null);
+        clearInterval(pollRef.current); setError(data.error); setStep("upload");
       } else { setStage(data.status); }
     } catch {
-      clearInterval(pollRef.current); setError("Connection lost."); setStage(null);
+      clearInterval(pollRef.current); setError("Connection lost."); setStep("upload");
     }
   };
 
   const analyze = async () => {
     if (!file) return;
-    setError(null); setResult(null); setStage("ingesting");
+    setError(null); setResult(null); setStage("ingesting"); setStep("processing");
+
     const form = new FormData();
     form.append("file", file);
+    form.append("company_name", company.name || "My Company");
+    form.append("domain_expertise", company.domain_expertise || "general");
+    form.append("annual_turnover_cr", company.annual_turnover_cr || 10);
+    form.append("years_in_operation", company.years_in_operation || 5);
+    form.append("certifications", company.certifications || "None");
+    form.append("prior_govt_projects", company.prior_govt_projects || 0);
+    form.append("technical_team_size", company.technical_team_size || 10);
+    form.append("registered_as", company.registered_as || "Pvt Ltd");
+    form.append("msme_registered", company.msme_registered);
+
     try {
       const res = await fetch(`${API_URL}/analyze`, { method: "POST", body: form });
       const data = await res.json();
       pollRef.current = setInterval(() => pollStatus(data.job_id), 3000);
     } catch {
-      setError("Could not reach backend."); setStage(null);
+      setError("Could not reach backend."); setStep("upload");
     }
   };
 
   const reset = () => {
     setFile(null); setStage(null); setResult(null);
-    setError(null); setActiveTab("strategy");
+    setError(null); setActiveTab("strategy"); setStep("profile");
     clearInterval(pollRef.current);
   };
 
@@ -131,6 +178,8 @@ export default function App() {
   const stageIdx = STAGES.indexOf(stage);
   const bidColor = bid?.bid_decision === "BID" ? "#16a34a" : bid?.bid_decision === "NO BID" ? "#dc2626" : "#d97706";
 
+  const profileComplete = company.name && company.domain_expertise;
+
   return (
     <div style={{ minHeight: "100vh", background: "#f8f8fc", fontFamily: "'Plus Jakarta Sans', sans-serif", color: "#111" }}>
       <style>{`
@@ -139,13 +188,11 @@ export default function App() {
         @keyframes fadeUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-        .hover-lift:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(99,102,241,0.3) !important; }
+        .hover-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 25px rgba(99,102,241,0.3) !important; }
         .tab:hover { background: #f0f0f8 !important; }
       `}</style>
 
-      {/* BG blobs */}
       <div style={{ position:"fixed", top:"-300px", right:"-200px", width:"700px", height:"700px", borderRadius:"50%", background:"radial-gradient(circle, rgba(99,102,241,0.07) 0%, transparent 70%)", pointerEvents:"none" }} />
-      <div style={{ position:"fixed", bottom:"-200px", left:"-200px", width:"500px", height:"500px", borderRadius:"50%", background:"radial-gradient(circle, rgba(16,163,74,0.05) 0%, transparent 70%)", pointerEvents:"none" }} />
 
       {/* Nav */}
       <nav style={{ position:"sticky", top:0, zIndex:100, background:"rgba(248,248,252,0.9)", backdropFilter:"blur(20px)", borderBottom:"1px solid #eee", padding:"0 40px", height:"60px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
@@ -153,98 +200,180 @@ export default function App() {
           <div style={{ width:"32px", height:"32px", background:"linear-gradient(135deg,#6366f1,#8b5cf6)", borderRadius:"10px", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"16px" }}>⚡</div>
           <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:"18px" }}>ProcureX</span>
         </div>
+        {/* Step indicator */}
+        <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+          {["profile","upload","processing","results"].map((s, i) => (
+            <div key={s} style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+              <div style={{
+                width:"28px", height:"28px", borderRadius:"50%",
+                background: step === s ? "#6366f1" : ["profile","upload","processing","results"].indexOf(step) > i ? "#16a34a" : "#e0e0e8",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                fontSize:"11px", fontWeight:700, color:"#fff"
+              }}>{i+1}</div>
+              {i < 3 && <div style={{ width:"20px", height:"2px", background: ["profile","upload","processing","results"].indexOf(step) > i ? "#16a34a" : "#e0e0e8" }} />}
+            </div>
+          ))}
+        </div>
         <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
           <div style={{ width:"7px", height:"7px", borderRadius:"50%", background:"#16a34a", animation:"pulse 2s infinite" }} />
-          <span style={{ fontSize:"12px", color:"#999", fontWeight:500 }}>4-Agent AI · Live</span>
+          <span style={{ fontSize:"12px", color:"#999", fontWeight:500 }}>Strands + Gemini</span>
         </div>
       </nav>
 
-      <div style={{ maxWidth:"820px", margin:"0 auto", padding:"56px 20px 80px" }}>
+      <div style={{ maxWidth:"820px", margin:"0 auto", padding:"48px 20px 80px" }}>
 
-        {/* Hero */}
-        {!result && !stage && (
-          <>
-            <div style={{ textAlign:"center", marginBottom:"48px", animation:"fadeUp 0.5s ease both" }}>
-              <div style={{ display:"inline-flex", alignItems:"center", gap:"8px", background:"#fff", border:"1px solid #eee", borderRadius:"100px", padding:"6px 16px", marginBottom:"20px", fontSize:"12px", fontWeight:600, color:"#6366f1" }}>
-                ✦ LangChain + Gemini 2.5 Flash
+        {/* Step 1: Company Profile */}
+        {step === "profile" && (
+          <div style={{ animation:"fadeUp 0.5s ease both" }}>
+            <div style={{ textAlign:"center", marginBottom:"40px" }}>
+              <div style={{ display:"inline-flex", alignItems:"center", gap:"8px", background:"#fff", border:"1px solid #eee", borderRadius:"100px", padding:"6px 16px", marginBottom:"16px", fontSize:"12px", fontWeight:600, color:"#6366f1" }}>
+                ✦ Step 1 of 2
               </div>
-              <h1 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:"clamp(32px,5.5vw,54px)", lineHeight:1.1, marginBottom:"18px" }}>
-                Government tender analysis,<br />
-                <span style={{ background:"linear-gradient(135deg,#6366f1,#8b5cf6)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>done by AI agents.</span>
+              <h1 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:"clamp(28px,4vw,42px)", lineHeight:1.1, marginBottom:"12px" }}>
+                Tell us about your company
               </h1>
-              <p style={{ fontSize:"16px", color:"#888", maxWidth:"440px", margin:"0 auto", lineHeight:1.7 }}>
-                Upload any GeM or CPPP tender PDF. Four agents analyze eligibility, market position, and generate a complete bid strategy.
+              <p style={{ fontSize:"15px", color:"#888", maxWidth:"400px", margin:"0 auto", lineHeight:1.7 }}>
+                We'll evaluate the tender against your specific capabilities and profile.
               </p>
             </div>
 
-            {/* Upload */}
-            <div style={{ animation:"fadeUp 0.5s ease 0.15s both" }}>
-              <div
-                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={handleDrop}
-                onClick={() => !file && fileRef.current.click()}
+            <div style={{ background:"#fff", borderRadius:"24px", padding:"36px", boxShadow:"0 2px 20px rgba(0,0,0,0.05)" }}>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 20px" }}>
+                <div style={{ gridColumn:"1/-1" }}>
+                  <Input label="Company Name *" value={company.name} onChange={v => setCompany({...company, name:v})} placeholder="e.g. Acme Technologies Pvt Ltd" />
+                </div>
+                <div style={{ gridColumn:"1/-1" }}>
+                  <Input label="Domain Expertise *" value={company.domain_expertise} onChange={v => setCompany({...company, domain_expertise:v})} placeholder="e.g. civil works, waterproofing, construction" hint="Comma separated — be specific, this drives the eligibility check" />
+                </div>
+                <Input label="Annual Turnover (₹ Crores)" value={company.annual_turnover_cr} onChange={v => setCompany({...company, annual_turnover_cr:v})} placeholder="e.g. 25" type="number" />
+                <Input label="Years in Operation" value={company.years_in_operation} onChange={v => setCompany({...company, years_in_operation:v})} placeholder="e.g. 10" type="number" />
+                <Input label="Certifications" value={company.certifications} onChange={v => setCompany({...company, certifications:v})} placeholder="e.g. ISO 9001, CMMI Level 3" hint="Comma separated" />
+                <Input label="Prior Govt Projects" value={company.prior_govt_projects} onChange={v => setCompany({...company, prior_govt_projects:v})} placeholder="e.g. 5" type="number" />
+                <Input label="Technical Team Size" value={company.technical_team_size} onChange={v => setCompany({...company, technical_team_size:v})} placeholder="e.g. 50" type="number" />
+                <div>
+                  <label style={{ fontSize:"12px", fontWeight:600, color:"#555", display:"block", marginBottom:"6px" }}>Registered As</label>
+                  <select value={company.registered_as} onChange={e => setCompany({...company, registered_as:e.target.value})}
+                    style={{ width:"100%", padding:"10px 14px", border:"1px solid #e0e0e8", borderRadius:"10px", fontSize:"14px", color:"#111", background:"#fff", outline:"none", fontFamily:"'Plus Jakarta Sans', sans-serif", marginBottom:"16px" }}>
+                    <option>Pvt Ltd</option>
+                    <option>Public Ltd</option>
+                    <option>Partnership</option>
+                    <option>Proprietorship</option>
+                    <option>LLP</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"24px" }}>
+                <input type="checkbox" checked={company.msme_registered} onChange={e => setCompany({...company, msme_registered:e.target.checked})}
+                  style={{ width:"16px", height:"16px", accentColor:"#6366f1" }} />
+                <label style={{ fontSize:"14px", color:"#555", fontWeight:500 }}>MSME Registered</label>
+              </div>
+
+              <button className="hover-btn" onClick={() => profileComplete && setStep("upload")}
                 style={{
-                  border: `2px dashed ${dragging || file ? "#6366f1" : "#e0e0e8"}`,
-                  borderRadius:"20px", padding: file ? "28px 32px" : "56px 32px",
-                  textAlign:"center", cursor: file ? "default" : "pointer",
-                  background: dragging ? "#fafaff" : "#fff",
-                  transition:"all 0.2s", marginBottom:"12px",
-                  boxShadow:"0 2px 20px rgba(0,0,0,0.04)"
-                }}>
-                <input ref={fileRef} type="file" accept=".pdf" style={{ display:"none" }} onChange={e => setFile(e.target.files[0])} />
-                {file ? (
-                  <div style={{ display:"flex", alignItems:"center", gap:"16px" }}>
-                    <div style={{ width:"48px", height:"48px", background:"#f0f0ff", borderRadius:"12px", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"22px" }}>📄</div>
-                    <div style={{ textAlign:"left" }}>
-                      <div style={{ fontWeight:700, fontSize:"15px" }}>{file.name}</div>
-                      <div style={{ color:"#aaa", fontSize:"13px", marginTop:"2px" }}>{(file.size/1024).toFixed(1)} KB · PDF</div>
-                    </div>
-                    <button onClick={(e) => { e.stopPropagation(); setFile(null); }} style={{ marginLeft:"auto", background:"#f5f5f5", border:"none", borderRadius:"8px", padding:"6px 14px", cursor:"pointer", color:"#999", fontSize:"12px", fontWeight:600 }}>Remove</button>
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ fontSize:"36px", marginBottom:"14px" }}>☁️</div>
-                    <div style={{ fontWeight:700, fontSize:"15px", marginBottom:"6px" }}>Drop your tender PDF here</div>
-                    <div style={{ color:"#bbb", fontSize:"13px" }}>or click to browse · GeM, CPPP, NIC portals</div>
-                  </>
-                )}
-              </div>
-
-              {file && (
-                <button className="hover-lift" onClick={analyze} style={{
-                  width:"100%", padding:"17px",
-                  background:"linear-gradient(135deg,#6366f1,#8b5cf6)",
-                  border:"none", borderRadius:"14px", color:"#fff",
+                  width:"100%", padding:"16px",
+                  background: profileComplete ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "#e0e0e8",
+                  border:"none", borderRadius:"14px", color: profileComplete ? "#fff" : "#aaa",
                   fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:"15px",
-                  cursor:"pointer", boxShadow:"0 4px 20px rgba(99,102,241,0.2)",
-                  transition:"all 0.2s", marginBottom:"12px"
-                }}>Analyze Tender →</button>
-              )}
-
-              {error && <div style={{ background:"#fff0f0", border:"1px solid #fecaca", borderRadius:"12px", padding:"14px", color:"#dc2626", fontSize:"13px", fontWeight:500 }}>⚠ {error}</div>}
-
-              <div style={{ display:"flex", justifyContent:"center", gap:"8px", marginTop:"28px", flexWrap:"wrap" }}>
-                {["📄 PDF Extractor", "✅ Eligibility", "📊 Market Intel", "🎯 Bid Strategy"].map(a => (
-                  <div key={a} style={{ background:"#fff", border:"1px solid #eee", borderRadius:"100px", padding:"5px 14px", fontSize:"12px", color:"#777", fontWeight:500 }}>{a}</div>
-                ))}
-              </div>
+                  cursor: profileComplete ? "pointer" : "not-allowed",
+                  boxShadow: profileComplete ? "0 4px 20px rgba(99,102,241,0.2)" : "none",
+                  transition:"all 0.2s"
+                }}>
+                Continue to Upload →
+              </button>
+              {!profileComplete && <div style={{ textAlign:"center", fontSize:"12px", color:"#bbb", marginTop:"8px" }}>Fill in Company Name and Domain Expertise to continue</div>}
             </div>
-          </>
+          </div>
         )}
 
-        {/* Progress */}
-        {stage && stage !== "complete" && (
+        {/* Step 2: Upload */}
+        {step === "upload" && (
+          <div style={{ animation:"fadeUp 0.5s ease both" }}>
+            <div style={{ textAlign:"center", marginBottom:"40px" }}>
+              <div style={{ display:"inline-flex", alignItems:"center", gap:"8px", background:"#fff", border:"1px solid #eee", borderRadius:"100px", padding:"6px 16px", marginBottom:"16px", fontSize:"12px", fontWeight:600, color:"#6366f1" }}>
+                ✦ Step 2 of 2
+              </div>
+              <h1 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:"clamp(28px,4vw,42px)", lineHeight:1.1, marginBottom:"12px" }}>
+                Upload tender PDF
+              </h1>
+              <p style={{ fontSize:"15px", color:"#888", maxWidth:"400px", margin:"0 auto" }}>
+                Analyzing for <b style={{ color:"#6366f1" }}>{company.name}</b>
+              </p>
+            </div>
+
+            {/* Company summary pill */}
+            <div style={{ background:"#fff", borderRadius:"16px", padding:"16px 20px", marginBottom:"16px", boxShadow:"0 2px 10px rgba(0,0,0,0.04)", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <div>
+                <div style={{ fontSize:"12px", color:"#bbb", fontWeight:600, marginBottom:"4px" }}>COMPANY PROFILE</div>
+                <div style={{ fontSize:"14px", fontWeight:600 }}>{company.name}</div>
+                <div style={{ fontSize:"12px", color:"#888", marginTop:"2px" }}>{company.domain_expertise}</div>
+              </div>
+              <button onClick={() => setStep("profile")} style={{ background:"#f5f5f5", border:"none", borderRadius:"8px", padding:"6px 14px", cursor:"pointer", color:"#666", fontSize:"12px", fontWeight:600 }}>Edit</button>
+            </div>
+
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={handleDrop}
+              onClick={() => !file && fileRef.current.click()}
+              style={{
+                border: `2px dashed ${dragging || file ? "#6366f1" : "#e0e0e8"}`,
+                borderRadius:"20px", padding: file ? "28px 32px" : "56px 32px",
+                textAlign:"center", cursor: file ? "default" : "pointer",
+                background: dragging ? "#fafaff" : "#fff",
+                transition:"all 0.2s", marginBottom:"12px",
+                boxShadow:"0 2px 20px rgba(0,0,0,0.04)"
+              }}>
+              <input ref={fileRef} type="file" accept=".pdf" style={{ display:"none" }} onChange={e => setFile(e.target.files[0])} />
+              {file ? (
+                <div style={{ display:"flex", alignItems:"center", gap:"16px" }}>
+                  <div style={{ width:"48px", height:"48px", background:"#f0f0ff", borderRadius:"12px", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"22px" }}>📄</div>
+                  <div style={{ textAlign:"left" }}>
+                    <div style={{ fontWeight:700, fontSize:"15px" }}>{file.name}</div>
+                    <div style={{ color:"#aaa", fontSize:"13px", marginTop:"2px" }}>{(file.size/1024).toFixed(1)} KB · PDF</div>
+                  </div>
+                  <button onClick={(e) => { e.stopPropagation(); setFile(null); }} style={{ marginLeft:"auto", background:"#f5f5f5", border:"none", borderRadius:"8px", padding:"6px 14px", cursor:"pointer", color:"#999", fontSize:"12px", fontWeight:600 }}>Remove</button>
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize:"36px", marginBottom:"14px" }}>☁️</div>
+                  <div style={{ fontWeight:700, fontSize:"15px", marginBottom:"6px" }}>Drop your tender PDF here</div>
+                  <div style={{ color:"#bbb", fontSize:"13px" }}>GeM · CPPP · NIC portals</div>
+                </>
+              )}
+            </div>
+
+            {file && (
+              <button className="hover-btn" onClick={analyze} style={{
+                width:"100%", padding:"17px",
+                background:"linear-gradient(135deg,#6366f1,#8b5cf6)",
+                border:"none", borderRadius:"14px", color:"#fff",
+                fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:"15px",
+                cursor:"pointer", boxShadow:"0 4px 20px rgba(99,102,241,0.2)",
+                transition:"all 0.2s", marginBottom:"12px"
+              }}>Analyze Tender →</button>
+            )}
+
+            {error && <div style={{ background:"#fff0f0", border:"1px solid #fecaca", borderRadius:"12px", padding:"14px", color:"#dc2626", fontSize:"13px", fontWeight:500 }}>⚠ {error}</div>}
+
+            <button onClick={() => setStep("profile")} style={{ width:"100%", marginTop:"8px", padding:"12px", background:"transparent", border:"1px solid #eee", borderRadius:"12px", color:"#aaa", cursor:"pointer", fontFamily:"'Plus Jakarta Sans',sans-serif", fontWeight:600, fontSize:"13px" }}>
+              ← Back to Company Profile
+            </button>
+          </div>
+        )}
+
+        {/* Processing */}
+        {step === "processing" && (
           <div style={{ background:"#fff", borderRadius:"24px", boxShadow:"0 2px 30px rgba(0,0,0,0.06)", padding:"40px", animation:"fadeUp 0.4s ease both" }}>
             <div style={{ marginBottom:"28px" }}>
-              <div style={{ fontSize:"12px", color:"#bbb", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:"8px" }}>Analyzing your tender</div>
+              <div style={{ fontSize:"12px", color:"#bbb", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:"8px" }}>Analyzing for {company.name}</div>
               <h2 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:"22px" }}>{STAGE_LABELS[stage] || "Processing..."}</h2>
             </div>
             <div style={{ height:"5px", background:"#f0f0f0", borderRadius:"100px", marginBottom:"28px", overflow:"hidden" }}>
               <div style={{ height:"100%", borderRadius:"100px", background:"linear-gradient(90deg,#6366f1,#8b5cf6)", width:`${((stageIdx+1)/STAGES.length)*100}%`, transition:"width 0.5s ease" }} />
             </div>
             {STAGES.map((s, i) => (
-              <div key={s} style={{ display:"flex", alignItems:"center", gap:"14px", padding:"12px 0", borderBottom: i < STAGES.length-1 ? "1px solid #f5f5f5" : "none", opacity: i > stageIdx ? 0.3 : 1, transition:"opacity 0.3s" }}>
+              <div key={s} style={{ display:"flex", alignItems:"center", gap:"14px", padding:"12px 0", borderBottom: i < STAGES.length-1 ? "1px solid #f5f5f5":"none", opacity: i > stageIdx ? 0.3 : 1, transition:"opacity 0.3s" }}>
                 <div style={{ width:"34px", height:"34px", borderRadius:"10px", flexShrink:0, background: i < stageIdx ? "#e8faf2" : i === stageIdx ? "#f0f0ff" : "#f5f5f5", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"15px" }}>
                   {i < stageIdx ? "✓" : STAGE_ICONS[s]}
                 </div>
@@ -257,11 +386,12 @@ export default function App() {
         )}
 
         {/* Results */}
-        {result && (
+        {step === "results" && result && (
           <div style={{ animation:"fadeUp 0.5s ease both" }}>
 
             {/* Decision Card */}
             <div style={{ background:"#fff", borderRadius:"24px", boxShadow:"0 2px 30px rgba(0,0,0,0.06)", padding:"40px", marginBottom:"12px", border:`1px solid ${bid?.bid_decision==="BID"?"#bbf7d0":bid?.bid_decision==="NO BID"?"#fecaca":"#fde68a"}` }}>
+              <div style={{ fontSize:"11px", color:"#bbb", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:"6px" }}>Analysis for {company.name}</div>
               <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:"24px", flexWrap:"wrap" }}>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:"11px", color:"#bbb", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:"10px" }}>Bid Decision</div>
@@ -283,7 +413,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Tender details */}
+            {/* Tender Info */}
             <div style={{ background:"#fff", borderRadius:"18px", boxShadow:"0 2px 16px rgba(0,0,0,0.04)", padding:"24px", marginBottom:"12px", display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:"18px" }}>
               {[["Tender No.", extraction?.tender_number], ["Authority", extraction?.issuing_authority], ["Value", `₹${extraction?.estimated_value_inr}`], ["Deadline", extraction?.submission_deadline]].map(([k, v]) => (
                 <div key={k}>
