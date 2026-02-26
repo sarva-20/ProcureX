@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 
-const API_URL = "http://localhost:8000";
+const API_URL = "https://procurex-api.onrender.com";
 
 const STAGES = ["ingesting", "extracting", "eligibility_check", "market_intelligence", "strategy_synthesis"];
 const STAGE_LABELS = {
