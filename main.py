@@ -69,10 +69,17 @@ def health():
 
 
 def run_pipeline(job_id: str, pdf_path: str, company_profile: dict):
+    """Background task — runs the 4-agent pipeline."""
     try:
         jobs[job_id]["status"] = "ingesting"
         collection_name = f"tender_{job_id}"
-        ingest_pdf(pdf_path, collection_name=collection_name)
+        context = ingest_pdf(pdf_path, collection_name=collection_name).get("text", "")
+        if not context or len(context.strip()) < 100:
+            jobs[job_id]["status"] = "failed"
+            jobs[job_id]["error"] = "This PDF appears to be image-based and contains no readable text. Please upload a text-based tender PDF from GeM, CPPP, or NIC portals."
+            jobs[job_id]["not_a_tender"] = True
+            return
+        
 
         jobs[job_id]["status"] = "extracting"
         extracted = run_extractor(collection_name=collection_name)
@@ -100,8 +107,12 @@ def run_pipeline(job_id: str, pdf_path: str, company_profile: dict):
         }
 
     except Exception as e:
+        error_msg = str(e)
         jobs[job_id]["status"] = "failed"
-        jobs[job_id]["error"] = str(e)
+        jobs[job_id]["error"] = error_msg
+        # Flag as not-a-tender for frontend to show sarcastic message
+        if "NotATenderError" in str(type(e)) or any(phrase in error_msg for phrase in ["not a tender", "That's not a tender", "Nice try", "agents are confused", "Error 404: Tender"]):
+            jobs[job_id]["not_a_tender"] = True
     finally:
         try:
             os.remove(pdf_path)
@@ -125,6 +136,11 @@ async def analyze_tender(
 ):
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
+
+    contents = await file.read()
+    if len(contents) > 10 * 1024 * 1024:  # 10MB
+        raise HTTPException(status_code=400, detail="File too large. Please upload a PDF under 10MB.")
+    await file.seek(0)
 
     job_id = str(uuid.uuid4())[:8]
     pdf_path = str(UPLOAD_DIR / f"{job_id}_{file.filename}")

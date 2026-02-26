@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 
-const API_URL = "https://procurex-api.onrender.com";
+const API_URL = "http://localhost:8000";
 
 const STAGES = ["ingesting", "extracting", "eligibility_check", "market_intelligence", "strategy_synthesis"];
 const STAGE_LABELS = {
@@ -159,6 +159,11 @@ export default function App() {
     try {
       const res = await fetch(`${API_URL}/analyze`, { method: "POST", body: form });
       const data = await res.json();
+      if (!res.ok) {
+        setError(data.detail || "Upload failed.");
+        setStep("upload");
+        return;
+      }
       pollRef.current = setInterval(() => pollStatus(data.job_id), 3000);
     } catch {
       setError("Could not reach backend."); setStep("upload");

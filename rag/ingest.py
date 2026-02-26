@@ -15,7 +15,10 @@ def ingest_pdf(pdf_path: str, collection_name: str = "tender_docs") -> dict:
     raw_text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
     if not raw_text.strip():
-        raise ValueError(f"Could not extract text from PDF: {pdf_path}")
+        raise ValueError(
+            "This PDF appears to be image-based and contains no readable text. "
+            "Please upload a text-based tender PDF from GeM, CPPP, or NIC portals."
+        )
 
     _pdf_store[collection_name] = raw_text
     print(f"[Ingest] Stored {len(raw_text)} chars from '{Path(pdf_path).name}'")
